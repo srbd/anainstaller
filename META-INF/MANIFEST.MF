@@ -1,0 +1,13 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Anaconda
+Bundle-SymbolicName: org.eclipse.dawnsci.anaconda;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Activator: org.eclipse.dawnsci.anaconda.Activator
+Require-Bundle: org.eclipse.ui,
+ org.eclipse.core.runtime,
+ org.python.pydev,
+ org.python.pydev.core;bundle-version="3.6.0",
+ org.apache.commons.io;bundle-version="2.4.0"
+Bundle-ActivationPolicy: lazy
+Bundle-RequiredExecutionEnvironment: JavaSE-1.7
