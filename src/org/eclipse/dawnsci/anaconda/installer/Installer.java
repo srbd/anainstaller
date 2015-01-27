@@ -28,7 +28,8 @@ public final class Installer implements IInstaller {
 	 * For a successful installation, how many characters come on stdout. Nothing goes wrong if too low or too high,
 	 * just makes progress bar more accurate (and allocations slightly more efficient)
 	 */
-	private static final int APPROX_NUM_OF_CHARS_ON_STDOUT = 5500;
+	private static final int APPROX_NUM_OF_CHARS_ON_STDOUT_MINI = 550;
+	private static final int APPROX_NUM_OF_CHARS_ON_STDOUT_ANA = 14600;
 
 	@Override
 	public void runManualInstall() throws CoreException {
@@ -46,33 +47,32 @@ public final class Installer implements IInstaller {
 	public void runInstall(String installPath, final IProgressMonitor monitor,
 			final InstallOutputHandler feedbackHandler, final IInstallCompleteHandler completeHandler)
 			throws CoreException {
-		monitor.beginTask("Installing", APPROX_NUM_OF_CHARS_ON_STDOUT);
+		monitor.beginTask("Installing", APPROX_NUM_OF_CHARS_ON_STDOUT_MINI + APPROX_NUM_OF_CHARS_ON_STDOUT_ANA);
 		feedbackHandler.starting();
 
-		Process process = launchProcess(installPath, feedbackHandler);
+		Process miniInstallProcess = launchMiniInstallProcess(installPath, feedbackHandler);
 
 		// Process StdErr
-		ThreadStreamReader err = new ThreadStreamReader(process.getErrorStream(), false);
+		ThreadStreamReader miniInstallErr = new ThreadStreamReader(miniInstallProcess.getErrorStream(), false);
 
 		// Process StdOut
-		final FastStringBuffer stdoutcontents = new FastStringBuffer(APPROX_NUM_OF_CHARS_ON_STDOUT);
-		Thread std = createStdoutThread(monitor, feedbackHandler, process, stdoutcontents);
-		std.start();
+		final FastStringBuffer miniStdoutContents = new FastStringBuffer(APPROX_NUM_OF_CHARS_ON_STDOUT_MINI);
+		Thread miniInstallStd = createStdoutThread(monitor, feedbackHandler, miniInstallProcess, miniStdoutContents);
+		miniInstallStd.start();
 
 		// Process StdIn
-		Thread stdin = createStdinThread(process, installPath);
-		stdin.start();
+		Thread miniInstallStdin = createStdinThread(miniInstallProcess, installPath);
+		miniInstallStdin.start();
 
-		waitUntilProcessDone(monitor, process, std, stdin, err);
+		waitUntilProcessDone(monitor, miniInstallProcess, miniInstallStd, miniInstallStdin, miniInstallErr);
 
-		String errcontents = err.getContents();
-		if (errcontents.length() > 0) {
-			feedbackHandler.output("\nError output:\n");
-			feedbackHandler.output(errcontents);
-		}
-
+		outputErrors(miniInstallErr, feedbackHandler);
+		
+		// Get the executable, will set as a last step
+		String installedExe;
+		
 		if (PlatformUtils.isWindowsPlatform()
-				|| (process.exitValue() == 0 )) {
+				|| (miniInstallProcess.exitValue() == 0 )) {
 			String exe = installPath;
 			if (PlatformUtils.isWindowsPlatform()) {
 				if (!exe.endsWith("\\")) {
@@ -86,7 +86,7 @@ public final class Installer implements IInstaller {
 				exe = exe + "bin/python";
 			}
 			if (new File(exe).exists()) {
-				completeHandler.setInstallPath(exe);
+				installedExe = exe;
 			} else {
 				Status status = new Status(IStatus.ERROR, Activator.PLUGIN_ID,
 						"Installation failed. Expected to find python here: '" + exe + "' but it was missing.");
@@ -97,7 +97,7 @@ public final class Installer implements IInstaller {
 					"Installation canceled. You may need to manually clean up partial install. Please review output.");
 			throw new CoreException(status);
 		} else {
-			String string = stdoutcontents.toString();
+			String string = miniStdoutContents.toString();
 			int errorIndex = string.indexOf("ERROR: ");
 			if (errorIndex < 0) {
 				string = "Unexpected/unknown error";
@@ -107,9 +107,43 @@ public final class Installer implements IInstaller {
 			Status status = new Status(IStatus.ERROR, Activator.PLUGIN_ID, string);
 			throw new CoreException(status);
 		}
+		// TODO: maybe refactor to allow more code reuse from above
+		
+		// Pull in anaconda packages using conda command
+		Process anaInstallProcess = launchAnaInstallProcess(installPath, feedbackHandler);
+		
+		// Process StdErr 
+		ThreadStreamReader anaInstallErr = new ThreadStreamReader(miniInstallProcess.getErrorStream(), false);
+
+		// Process StdOut
+		final FastStringBuffer stdoutcontentsA = new FastStringBuffer(APPROX_NUM_OF_CHARS_ON_STDOUT_ANA);
+		Thread anaInstallStd = createStdoutThread(monitor, feedbackHandler, anaInstallProcess, stdoutcontentsA);
+		anaInstallStd.start();
+
+		// Process StdIn
+		Thread anaInstallStdin = createStdinThread(anaInstallProcess, installPath);
+		anaInstallStdin.start();
+
+		waitUntilProcessDone(monitor, anaInstallProcess, anaInstallStd, anaInstallStdin, anaInstallErr);
+		
+		outputErrors(anaInstallErr, feedbackHandler);
+
+		// TODO: Check to see if certain files are there/Error handling?
+		// TODO: Output from anaconda install currently suppressed as it kills the monitor; maybe add more feedback
+		
+		// Finally set the python executable
+		completeHandler.setInstallPath(installedExe);
 
 		monitor.done();
 
+	}
+	
+	private void outputErrors(final ThreadStreamReader err, final InstallOutputHandler feedbackHandler){
+		String errcontents = err.getContents();
+		if (errcontents.length() > 0) {
+			feedbackHandler.output("\nError output:\n");
+			feedbackHandler.output(errcontents);
+		}
 	}
 
 	private void waitUntilProcessDone(final IProgressMonitor monitor, final Process process, Thread std, Thread stdin,
@@ -206,23 +240,8 @@ public final class Installer implements IInstaller {
 		return stdin;
 	}
 
-	private Process launchProcess(String installPath, InstallOutputHandler handler) throws CoreException {
-		IPath installer = getInstallerLocation();
+	private Process launchProcess(String[] cmdarray, InstallOutputHandler handler) throws CoreException {
 		
-		handler.output("Installer location: ");
-
-		final String[] cmdarray;
-		if (PlatformUtils.isWindowsPlatform()) {
-			cmdarray = new String[] { "cmd.exe", "/c", installer.toOSString(), "TARGETDIR=" + installPath, "/qr", "/norestart" };
-		} else {
-			
-			// eg installPath -b -p && installPath/bin/conda install --yes anaconda
-			// TODO: get this to work rather than chaining two bash commands; simplerunner doesn't seem to respect these - two processes? 
-			String condaPath = installPath + "/bin/conda";
-			cmdarray = new String[] { installer.toOSString(), "-b", "-p", installPath, "&&", condaPath, "install", "--yes", "anaconda" };
-		}
-		
-
 		handler.output("Running: ");
 		for (int i = 0; i < cmdarray.length; i++) {
 			handler.output(cmdarray[i]);
@@ -237,6 +256,38 @@ public final class Installer implements IInstaller {
 			Status status = new Status(IStatus.ERROR, Activator.PLUGIN_ID, "Failed to launch installer", e);
 			throw new CoreException(status);
 		}
+	}
+	
+	
+	private Process launchMiniInstallProcess(String installPath, InstallOutputHandler handler) throws CoreException {
+		IPath installer = getInstallerLocation();
+		
+		handler.output("Installer location: ");
+		
+		final String[] cmdarray;
+		if (PlatformUtils.isWindowsPlatform()) {
+			cmdarray = new String[] { "cmd.exe", "/c", installer.toOSString(), "TARGETDIR=" + installPath, "/qr", "/norestart" };
+		} else {
+			cmdarray = new String[] { installer.toOSString(), "-b", "-p", installPath};
+		}
+		
+		return launchProcess(cmdarray, handler);
+	}
+
+	private Process launchAnaInstallProcess(String installPath, InstallOutputHandler handler) throws CoreException {
+		
+		handler.output("Fetching and installing anaconda packages..");
+		
+		final String[] cmdarray;
+		if (PlatformUtils.isWindowsPlatform()) {
+			// TODO!!
+			cmdarray = new String[] {};
+		} else {
+			String condaPath = installPath + "/bin/conda";
+			cmdarray = new String[] { condaPath, "install", "--yes", "--quiet", "anaconda"};
+		}
+		
+		return launchProcess(cmdarray, handler);
 	}
 
 	/**
