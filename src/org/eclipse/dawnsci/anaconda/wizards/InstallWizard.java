@@ -50,6 +50,19 @@ public class InstallWizard extends Wizard {
 		destinationPage = new DestinationPage();
 		addPage(destinationPage);
 	}
+	
+	@Override
+	public boolean canFinish()
+	{
+		/* Finish button only available if license agreed to 
+		 */
+		if(getContainer().getCurrentPage() == licenseAgreementPage){
+			return false;
+		}
+		else {
+			return true;
+		}
+	}
 
 	@Override
 	public boolean performFinish() {
