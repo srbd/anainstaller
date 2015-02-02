@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<fragment>
+   <extension 
+         point="org.python.pydev.pydev_interpreter_provider">
+      <interpreter_provider_participant 
+            class="org.eclipse.dawnsci.anaconda.InstallAnacondaFactory">
+      </interpreter_provider_participant>
+   </extension>
+
+</fragment>

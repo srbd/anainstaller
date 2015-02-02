@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Linux X86_64 Fragment for Anaconda Installer
+Bundle-SymbolicName: org.eclipse.dawnsci.anaconda.linux64;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Fragment-Host: org.eclipse.dawnsci.anaconda;bundle-version="1.0.0.qualifier"
+Bundle-RequiredExecutionEnvironment: JavaSE-1.7
