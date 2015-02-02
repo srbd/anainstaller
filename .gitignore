@@ -1,7 +1,8 @@
 # Ignores that are common to all Eclipse GDA plugin projects
-/bin
+bin/
 
 # Ignores that are specific to this Eclipse project
-installer/anaconda_*.sh
+*Miniconda*.sh
+
 
 
