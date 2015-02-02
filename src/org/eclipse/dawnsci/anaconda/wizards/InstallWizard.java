@@ -54,9 +54,10 @@ public class InstallWizard extends Wizard {
 	@Override
 	public boolean canFinish()
 	{
-		/* Finish button only available if license agreed to 
+		/* Finish button only available if license agreed to and destinationPage is complete (ie
+		 * valid install location given)
 		 */
-		if(getContainer().getCurrentPage() == licenseAgreementPage){
+		if(getContainer().getCurrentPage() == licenseAgreementPage || !destinationPage.isPageComplete()){
 			return false;
 		}
 		else {
